@@ -10,7 +10,13 @@ application {
     mainClass = 'chat.client.ClientMain'
 }
 
-// OBLIGATORIO: Permite que Gradle lea del teclado (System.in) en tareas interactivas
 run {
+    // Se ejecuta desde client/ para que encuentre config.client
+    workingDir = projectDir
+    // OBLIGATORIO: permite leer del teclado (System.in) en la CLI
     standardInput = System.in
+    // IP del servidor sin editar archivos: ./gradlew runClient -PserverHost=192.168.1.20
+    if (project.hasProperty('serverHost')) {
+        args "--Chat.Server.Host=${project.property('serverHost')}"
+    }
 }

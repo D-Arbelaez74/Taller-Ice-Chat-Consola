@@ -3,10 +3,14 @@ plugins {
 }
 
 dependencies {
-    // Vincula las clases generadas por Slice desde el modulo common
     implementation project(':common')
 }
 
 application {
     mainClass = 'chat.server.ServerMain'
+}
+
+run {
+    // Se ejecuta desde server/ para que encuentre config.server
+    workingDir = projectDir
 }

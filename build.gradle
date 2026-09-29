@@ -1,4 +1,7 @@
 allprojects {
+    group = 'chat'
+    version = '1.0'
+
     repositories {
         mavenCentral()
     }
@@ -7,13 +10,27 @@ allprojects {
 subprojects {
     apply plugin: 'java'
 
+    // Toolchain: Gradle compila y ejecuta con JDK 17 aunque el "java" del PATH sea otro
     java {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
     }
 
-    dependencies {
-        // Runtime oficial de ZeroC Ice para Java
-        implementation 'com.zeroc:ice:3.7.10'
+    tasks.withType(JavaCompile).configureEach {
+        options.encoding = 'UTF-8'
     }
+}
+
+// Tareas de entrega exigidas por el enunciado: ./gradlew runServer | ./gradlew runClient
+tasks.register('runServer') {
+    group = 'application'
+    description = 'Inicia el servidor Ice del chat.'
+    dependsOn ':server:run'
+}
+
+tasks.register('runClient') {
+    group = 'application'
+    description = 'Inicia un cliente de consola. Servidor remoto: -PserverHost=<ip>'
+    dependsOn ':client:run'
 }

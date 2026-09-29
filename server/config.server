@@ -1,0 +1,15 @@
+# Adaptador principal del servidor (escucha en todas las interfaces de red)
+ChatAdapter.Endpoints=tcp -h * -p 10000
+
+# Tamano maximo de mensaje Ice en KB (defecto 1024). Los chunks de archivos deben ser menores.
+Ice.MessageSizeMax=2048
+
+# Pool de hilos del servidor (el despacho es concurrente -> estado thread-safe)
+Ice.ThreadPool.Server.Size=4
+Ice.ThreadPool.Server.SizeMax=16
+
+# TODO (P1): configurar ACM / heartbeats para detectar clientes caidos
+# Ice.ACM.Server.Timeout=30
+# Ice.ACM.Server.Heartbeat=3
+
+Ice.Warn.Connections=1

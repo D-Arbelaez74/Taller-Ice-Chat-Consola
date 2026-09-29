@@ -1,0 +1,11 @@
+# Direccion del servidor. Se puede sobrescribir con: ./gradlew runClient -PserverHost=<ip>
+Chat.Server.Host=127.0.0.1
+Chat.Server.Port=10000
+
+# Debe coincidir con el servidor (KB)
+Ice.MessageSizeMax=2048
+
+# Carpeta donde se reconstruyen los archivos recibidos
+Chat.Downloads.Dir=downloads
+
+Ice.Warn.Connections=1

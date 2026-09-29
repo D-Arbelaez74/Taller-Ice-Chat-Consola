@@ -1,34 +1,46 @@
-package chat . server ;
-import com . zeroc . Ice . Communicator ;
-import com . zeroc . Ice . ObjectAdapter ;
-import com . zeroc . Ice . Util ;
+package chat.server;
+
+import chat.server.calls.CallServiceI;
+import chat.server.files.FileServiceI;
+import chat.server.messaging.MessagingServiceI;
+import chat.server.messaging.RoomManager;
+import chat.server.session.SessionManager;
+import chat.server.session.SessionServiceI;
+import com.zeroc.Ice.Communicator;
+import com.zeroc.Ice.ObjectAdapter;
+import com.zeroc.Ice.Util;
+
+/**
+ * Punto de entrada del servidor. Registra un servant por modulo:
+ * Session (P1), Messaging (P2), Files (P3), Calls (P4).
+ */
 public class ServerMain {
-public static void main ( String [] args ) {
-int exitCode = 0;
-// I n i c i a l i z a c i o n del Communicator dentro de try -with - resources
-try ( Communicator communicator = Util . initialize ( args )) {
-// 1. Crear Ob je ct Ad apt er vinculado al puerto TCP 10000
-ObjectAdapter adapter = communicator . createObjectAdapterWithEndpoints (
-" ChatAdapter ", " default -p 10000 "
-);
-// 2. Instanciar el Servant y registrarlo con identidad ’ ChatService ’
-ChatRoomI servant = new ChatRoomI () ;
-adapter . add ( servant , Util . stringToIdentity (" ChatService "));
-// 3. Activar el adaptador para recibir llamadas RPC
-adapter . activate () ;
-System . out . println (" ================================================= ") ;
-System . out . println (" SERVIDOR ZEROC ICE INICIADO EXITOSAMENTE ");
-System . out . println (" Puerto TCP : 10000 | Endpoint : default -p 10000 ");
-System . out . println (" Identidad del Servicio : ChatService ");
-System . out . println (" ================================================= ") ;
-System . out . println (" Esperando llamadas remotas de clientes ... ");
-// 4. Bloquear el hilo principal hasta orden de apagado ( Ctrl +C)
-communicator . waitForShutdown () ;
-} catch ( Exception e) {
-System . err . println ("[ ERROR SERVIDOR ] Fallo critico : " + e. getMessage () );
-e. printStackTrace () ;
-exitCode = 1;
-}
-System . exit ( exitCode ) ;
-}
+
+    public static void main(String[] args) {
+        int exitCode = 0;
+        try (Communicator communicator = Util.initialize(args, "config.server")) {
+            ObjectAdapter adapter = communicator.createObjectAdapter("ChatAdapter");
+
+            // Estado compartido entre servants
+            SessionManager sessions = new SessionManager();
+            RoomManager rooms = new RoomManager();
+
+            adapter.add(new SessionServiceI(sessions, rooms), Util.stringToIdentity("Session"));
+            adapter.add(new MessagingServiceI(sessions, rooms), Util.stringToIdentity("Messaging"));
+            adapter.add(new FileServiceI(sessions, rooms), Util.stringToIdentity("Files"));
+            adapter.add(new CallServiceI(sessions), Util.stringToIdentity("Calls"));
+
+            adapter.activate();
+            System.out.println("[SERVER] Servidor Ice iniciado: "
+                    + communicator.getProperties().getProperty("ChatAdapter.Endpoints"));
+            System.out.println("[SERVER] Identidades: Session, Messaging, Files, Calls");
+
+            communicator.waitForShutdown();
+        } catch (Exception e) {
+            System.err.println("[SERVER] Error fatal: " + e.getMessage());
+            e.printStackTrace();
+            exitCode = 1;
+        }
+        System.exit(exitCode);
+    }
 }

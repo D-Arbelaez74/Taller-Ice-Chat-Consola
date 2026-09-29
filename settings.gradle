@@ -1,6 +1,6 @@
 rootProject.name = 'Taller-ICE-Chat-Consola'
 
-// Incluye los tres modulos del sistema distribuido
-include 'common'
-include 'server'
-include 'client'
+// common: contratos Slice (codigo Java generado por el plugin ice-builder)
+// server: servidor Ice
+// client: cliente de consola (CLI) + voz UDP
+include 'common', 'server', 'client'
