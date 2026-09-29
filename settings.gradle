@@ -1,0 +1,6 @@
+rootProject.name = 'Taller-ICE-Chat-Consola'
+
+// Incluye los tres modulos del sistema distribuido
+include 'common'
+include 'server'
+include 'client'
