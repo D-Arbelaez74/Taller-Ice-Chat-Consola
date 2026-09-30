@@ -1,5 +1,4 @@
-// RF-01 Sesion, presencia y registro del callback del cliente.
-// Responsable: P1
+
 #pragma once
 
 #include "Types.ice"
@@ -10,21 +9,20 @@
 [["java:package:chat"]]
 module contract
 {
-    interface PresenceObserver
+    interface PresenceObserver //Sirve para ver si el usuario esta conectado o desconectado
     {
         void onUserConnected(string nickname);
         void onUserDisconnected(string nickname);
     }
 
-    // Objeto callback unico que el cliente registra al hacer login.
-    // Hereda los eventos de cada modulo.
+    // Un solo callback que tiene los eventos de los cuatro integrantes
     interface ClientCallback extends PresenceObserver, MessageObserver, FileObserver, CallObserver {}
 
     interface SessionService
     {
-        // Retorna los usuarios conectados en el momento del login
-        StringSeq login(string nickname, ClientCallback* callback) throws ChatException;
-        void logout(string nickname);
+        StringSeq login(string nickname, ClientCallback* callback) throws ChatException; //Registra al usuario con la dirección para hacer el callback
+        void logout(string nickname); //Cierra la sesión
         idempotent StringSeq getOnlineUsers();
+        //El idempotent nos permite leer datos sin alterar info. En este caso revisa si hay usuario online.
     }
 }

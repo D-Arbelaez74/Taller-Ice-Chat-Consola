@@ -1,20 +1,20 @@
-// Tipos y excepciones compartidos por todos los contratos.
-// Responsable: P1 (cambios acordados con todo el equipo)
+
 #pragma once
 
 [["java:package:chat"]]
 module contract
 {
-    sequence<string> StringSeq;
-    sequence<byte> ByteSeq;
+    sequence<string> StringSeq; //Aquí se transmiten listas de usuarios
+    sequence<byte> ByteSeq; //Aquí ya son los bloques de archivos
 
-    // Excepcion base de negocio
+    // La excepción grande del negocio. Como la excepcion padre de la que se herdan las otras.
     exception ChatException
     {
         string reason;
     }
 
-    exception NicknameInUseException extends ChatException {}
-    exception UserNotFoundException extends ChatException {}
-    exception NotLoggedInException extends ChatException {}
+    //Excepciones para casos especificos
+    exception NicknameInUseException extends ChatException {} //Por un nombre repetido
+    exception UserNotFoundException extends ChatException {} //Por usuario no encontrado
+    exception NotLoggedInException extends ChatException {} //Por no haber hecho login
 }

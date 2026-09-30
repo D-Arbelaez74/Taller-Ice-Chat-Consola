@@ -1,9 +1,26 @@
+def getShortPath(File f) {
+    if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+        try {
+            def p = ['cmd.exe', '/c', "for %I in (\"${f.absolutePath}\") do @echo %~sI"].execute()
+            def out = p.text.trim()
+            if (p.waitFor() == 0 && !out.isEmpty()) {
+                return out
+            }
+        } catch (Exception ignored) {}
+    }
+    return f.absolutePath
+}
+
 allprojects {
     group = 'chat'
     version = '1.0'
 
     repositories {
         mavenCentral()
+    }
+
+    if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+        layout.buildDirectory = file(getShortPath(projectDir) + '/build')
     }
 }
 
