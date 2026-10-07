@@ -1,6 +1,6 @@
 package chat.client;
 
-import chat.client.cli.ConsolePrinter;
+
 import chat.contract.CallServicePrx;
 import chat.contract.FileServicePrx;
 import chat.contract.MessagingServicePrx;
@@ -17,18 +17,16 @@ public class ClientContext {
     public final MessagingServicePrx messaging;
     public final FileServicePrx files;
     public final CallServicePrx calls;
-    public final ConsolePrinter printer;
 
     private volatile String nickname;
 
     public ClientContext(Communicator communicator, SessionServicePrx session, MessagingServicePrx messaging,
-                         FileServicePrx files, CallServicePrx calls, ConsolePrinter printer) {
+                         FileServicePrx files, CallServicePrx calls) {
         this.communicator = communicator;
         this.session = session;
         this.messaging = messaging;
         this.files = files;
         this.calls = calls;
-        this.printer = printer;
     }
 
     public String nickname() {

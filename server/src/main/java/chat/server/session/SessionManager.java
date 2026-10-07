@@ -1,21 +1,18 @@
 package chat.server.session;
 
-import chat.contract.ClientCallbackPrx;
-
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Registro thread-safe de usuarios conectados y sus proxies de callback.
- * Lo usan todos los servants para localizar al destinatario de un evento.
- * Responsable: P1
- */
+import chat.contract.ClientCallbackPrx;
+
+//La idea es hacer una conexión segura de usuarios y los proxies para callback
+//Se va a usar por todos los servants para localizar la ubicación de destino de un evento.
 public class SessionManager {
 
     private final Map<String, ClientCallbackPrx> clients = new ConcurrentHashMap<>();
 
-    /** @return false si el nickname ya estaba en uso (operacion atomica). */
+    //Aquí lanza un false si es que el nickname ya estaba en uso por alguien más
     public boolean register(String nickname, ClientCallbackPrx callback) {
         return clients.putIfAbsent(nickname, callback) == null;
     }
@@ -40,6 +37,37 @@ public class SessionManager {
         return Map.copyOf(clients);
     }
 
-    // TODO (P1): notificar conexion/desconexion a todos (onUserConnected / onUserDisconnected)
-    // TODO (P1): si un callback lanza excepcion de conexion -> remover al cliente (tolerancia a fallos)
+    // Notifica a todos los demás usuarios que alguien nuevo entró
+    public void notifyUserConnected(String newNickname) {
+        for (Map.Entry<String, ClientCallbackPrx> entry : clients.entrySet()) { //Recorremos el Map para conocer los clientes que tenemos y notificar si es que hay alguno nuevo que entre
+            String peerNickname = entry.getKey(); //LLave del que este entrando
+            ClientCallbackPrx callback = entry.getValue();
+
+            try {
+                // Usamos Async para enviar el mensaje por la red sin bloquear el ciclo
+                callback.onUserConnectedAsync(newNickname);
+            } catch (com.zeroc.Ice.LocalException e) { //Aquí utilizamos esa excepción por si la consola se cierra sola por algun error y se avisa que el usuario se salio en vez de que falle todo el programa.
+                System.out.println("Se ha desconectado el cliente -> " + peerNickname);
+                unregister(peerNickname);
+                // También se notifica de forma recursiva si es el caso de que se desconecte el cliente, entonces se llama al mismo método
+                notifyUserDisconnected(peerNickname); 
+            }
+        }
+    }
+
+    // Casi la misma logica del de conexión pero ya para cuando un cliente se desconecta
+    public void notifyUserDisconnected(String leftNickname) {
+        for (Map.Entry<String, ClientCallbackPrx> entry : clients.entrySet()) { //Mismo recorrido para ver los clientes que tengo
+            String peerNickname = entry.getKey();
+            ClientCallbackPrx callback = entry.getValue();
+
+            try {
+                callback.onUserDisconnectedAsync(leftNickname);
+            } catch (com.zeroc.Ice.LocalException e) { //También se implementa la excepción porque puede que el cliente se desconecte no por orden sino porque se cayo el sistema o su llamada
+                //Por eso también incluimos nuevamente el catch.
+                System.out.println("Cliente desconectado abruptamente -> " + peerNickname);
+                unregister(peerNickname);
+            }
+        }
+    }
 }

@@ -22,7 +22,7 @@ public class CallController {
     }
 
     public void onIncomingCall(String caller, VoiceEndpoint callerEndpoint) {
-        ctx.printer.event("Llamada entrante de " + caller + " (/accept o /reject)");
+        System.out.println("Llamada entrante de " + caller + " (/accept o /reject)");
     }
 
     public void onCallAccepted(String callee, VoiceEndpoint calleeEndpoint) {
@@ -30,7 +30,7 @@ public class CallController {
     }
 
     public void onCallRejected(String callee) {
-        ctx.printer.event(callee + " rechazo la llamada");
+        System.out.println(callee + " rechazo la llamada");
     }
 
     public void onCallEnded(String peer) {

@@ -23,10 +23,10 @@ public class MessagingController {
 
     public void onPrivateMessage(TextMessage msg) {
         // TODO (P2): formato con hora
-        ctx.printer.event("[privado] " + msg.sender + ": " + msg.text);
+        System.out.println("[privado] " + msg.sender + ": " + msg.text);
     }
 
     public void onRoomMessage(TextMessage msg) {
-        ctx.printer.event("[#" + msg.room + "] " + msg.sender + ": " + msg.text);
+        System.out.println("[#" + msg.room + "] " + msg.sender + ": " + msg.text);
     }
 }

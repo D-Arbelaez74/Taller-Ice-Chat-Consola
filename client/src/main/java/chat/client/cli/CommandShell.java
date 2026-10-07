@@ -22,11 +22,9 @@ public class CommandShell {
     private record Entry(String usage, String description, Command action) {}
 
     private final Map<String, Entry> commands = new LinkedHashMap<>();
-    private final ConsolePrinter printer;
     private volatile boolean running = true;
 
-    public CommandShell(ConsolePrinter printer) {
-        this.printer = printer;
+    public CommandShell() {
         register("/help", "/help", "Muestra los comandos disponibles", args -> printHelp());
     }
 
@@ -39,16 +37,15 @@ public class CommandShell {
     }
 
     public void run(Scanner in) {
-        printer.info("Escriba /help para ver los comandos.");
-        printer.prompt();
+        System.out.println("Escriba /help para ver los comandos.");
+        System.out.print("> ");
         while (running && in.hasNextLine()) {
             String line = in.nextLine().trim();
-            printer.inputConsumed();
             if (!line.isEmpty()) {
                 dispatch(line);
             }
             if (running) {
-                printer.prompt();
+                System.out.print("> ");
             }
         }
     }
@@ -57,15 +54,15 @@ public class CommandShell {
         String[] parts = line.split("\\s+", 2);
         Entry entry = commands.get(parts[0].toLowerCase());
         if (entry == null) {
-            printer.error("Comando desconocido: " + parts[0] + " (use /help)");
+            System.out.println("Comando desconocido: " + parts[0] + " (use /help)");
             return;
         }
         try {
             entry.action().execute(parts.length > 1 ? parts[1] : "");
         } catch (ChatException e) {
-            printer.error(e.reason);
+            System.out.println(e.reason);
         } catch (Exception e) {
-            printer.error("Fallo al ejecutar " + parts[0] + ": " + e);
+            System.out.println("Fallo al ejecutar " + parts[0] + ": " + e);
         }
     }
 
@@ -73,6 +70,6 @@ public class CommandShell {
         StringBuilder sb = new StringBuilder("Comandos:");
         commands.values().forEach(e ->
                 sb.append(System.lineSeparator()).append(String.format("  %-32s %s", e.usage(), e.description())));
-        printer.event(sb.toString());
+        System.out.println(sb.toString());
     }
 }
