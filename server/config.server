@@ -8,8 +8,11 @@ Ice.MessageSizeMax=2048
 Ice.ThreadPool.Server.Size=4
 Ice.ThreadPool.Server.SizeMax=16
 
-# TODO (P1): configurar ACM / heartbeats para detectar clientes caidos
-# Ice.ACM.Server.Timeout=30
-# Ice.ACM.Server.Heartbeat=3
-
+#Misma conexión activa del config.client
+# Cierra automáticamente las conexiones que llevan 30 segundos inactivas.
+Ice.ACM.Server.Timeout=30 #Garantiza que si no se envían bytes despues de 30 segundos por el socket
+# 3 significa "Always": El servidor enviará pequeños "latidos" (heartbeats) 
+# por la red para asegurarse de que el cliente sigue vivo y evitar que la 
+# conexión se cierre por inactividad.
+Ice.ACM.Server.Heartbeat=3 #Manda info muy pequeña para mantener el socket abierto por un tiempo y que no se cierre tan rapido
 Ice.Warn.Connections=1

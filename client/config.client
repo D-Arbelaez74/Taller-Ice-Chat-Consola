@@ -8,4 +8,8 @@ Ice.MessageSizeMax=2048
 # Carpeta donde se reconstruyen los archivos recibidos
 Chat.Downloads.Dir=downloads
 
+# Mismos valores que el servidor para que estén sincronizados
+Ice.ACM.Client.Timeout=30 #Garantiza que si no se envían bytes despues de 30 segundos por el socket
+Ice.ACM.Client.Heartbeat=3 #Manda info muy pequeña para mantener el socket abierto por un tiempo y que no se cierre tan rapido
+
 Ice.Warn.Connections=1
