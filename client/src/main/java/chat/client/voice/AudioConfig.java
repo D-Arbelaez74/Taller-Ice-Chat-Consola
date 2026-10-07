@@ -2,17 +2,14 @@ package chat.client.voice;
 
 import javax.sound.sampled.AudioFormat;
 
-/**
- * Formato de audio comun a captura y reproduccion (ambos extremos deben usar el mismo).
- * Responsable: P4
- */
-public final class AudioConfig {
+public class AudioConfig {
+    public static AudioFormat getFormat() {
+        float sampleRate = 8000.0f; // 8kHz es suficiente para voz humana
+        int sampleSizeInBits = 16;
+        int channels = 1;
+        boolean signed = true;
+        boolean bigEndian = false;
 
-    public static final AudioFormat FORMAT = new AudioFormat(16000f, 16, 1, true, false);
-
-    /** Bytes por datagrama: 20 ms de audio a 16 kHz, 16 bits, mono. */
-    public static final int PACKET_BYTES = 640;
-
-    private AudioConfig() {
+        return new AudioFormat(sampleRate, sampleSizeInBits, channels, signed, bigEndian);
     }
 }
