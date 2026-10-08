@@ -11,10 +11,6 @@ import chat.contract.TextMessage;
 import chat.contract.VoiceEndpoint;
 import com.zeroc.Ice.Current;
 
-/**
- * Servant que el servidor invoca de forma asincrona. Solo delega en el controller
- * de cada modulo, asi nadie necesita modificar esta clase.
- */
 public class ClientCallbackI implements ClientCallback {
 
     private final SessionController session;
@@ -30,7 +26,6 @@ public class ClientCallbackI implements ClientCallback {
         this.calls = calls;
     }
 
-    // --- Presencia (P1)
     @Override
     public void onUserConnected(String nickname, Current current) {
         session.onUserConnected(nickname);
@@ -41,7 +36,6 @@ public class ClientCallbackI implements ClientCallback {
         session.onUserDisconnected(nickname);
     }
 
-    // --- Mensajes (P2)
     @Override
     public void onPrivateMessage(TextMessage msg, Current current) {
         messaging.onPrivateMessage(msg);
@@ -52,7 +46,6 @@ public class ClientCallbackI implements ClientCallback {
         messaging.onRoomMessage(msg);
     }
 
-    // --- Archivos (P3)
     @Override
     public void onFileStart(FileMeta meta, Current current) {
         files.onFileStart(meta);
@@ -68,7 +61,6 @@ public class ClientCallbackI implements ClientCallback {
         files.onFileEnd(transferId, sha256);
     }
 
-    // --- Llamadas (P4)
     @Override
     public void onIncomingCall(String caller, VoiceEndpoint callerEndpoint, Current current) {
         calls.onIncomingCall(caller, callerEndpoint);
@@ -88,4 +80,10 @@ public class ClientCallbackI implements ClientCallback {
     public void onCallEnded(String peer, Current current) {
         calls.onCallEnded(peer);
     }
+
+    @Override
+    public void onGroupCallSync(String room, VoiceEndpoint[] endpoints, Current current) {
+        calls.onGroupCallSync(room, endpoints);
+    }
 }
+
