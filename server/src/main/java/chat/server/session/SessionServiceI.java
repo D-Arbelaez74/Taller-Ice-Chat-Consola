@@ -37,6 +37,7 @@ public class SessionServiceI implements SessionService {
         current.con.setCloseCallback(con -> {
             if (sessions.unregister(nickname, callback)) {
                 System.out.println("Cliente desconectado abruptamente -> " + nickname);
+                rooms.removeUserFromAllRooms(nickname);
                 sessions.notifyUserDisconnected(nickname);
             }
         });
@@ -55,8 +56,9 @@ public class SessionServiceI implements SessionService {
         if (wasOnline == true) {
             System.out.println("Usuario desconectado correctamente: " + nickname);
             
-            // Nota para P2: Aquí se debería llamar a rooms.removeUserFromAllRooms(nickname) después
-            
+            // Lo sacamos de las salas en las que estaba para que no le sigan llegando mensajes
+            rooms.removeUserFromAllRooms(nickname);
+
             // Avisamos a los demás
             sessions.notifyUserDisconnected(nickname);
         }

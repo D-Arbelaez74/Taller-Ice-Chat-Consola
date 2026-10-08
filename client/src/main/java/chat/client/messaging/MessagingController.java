@@ -34,7 +34,55 @@ public class MessagingController {
             System.out.println("Mensaje enviado a " + parts[0]);
         });
 
-        // TODO (P2): registrar /create <sala>, /rooms, /join <sala>, /leave <sala>, /room <sala> <texto>
+        shell.register("/create", "/create <sala>", "Crea una sala y te une a ella", args -> {
+            String room = args.trim();
+            if (room.isEmpty()) {
+                System.out.println("Uso: /create <sala>");
+                return;
+            }
+            ctx.messaging.createRoom(ctx.nickname(), room);
+            System.out.println("Sala " + room + " creada. Ya estas adentro.");
+        });
+
+        shell.register("/rooms", "/rooms", "Lista las salas disponibles", args -> {
+            String[] rooms = ctx.messaging.listRooms();
+            if (rooms.length == 0) {
+                System.out.println("Todavia no hay salas. Crea una con /create <sala>");
+            } else {
+                System.out.println("Salas: " + String.join(", ", rooms));
+            }
+        });
+
+        shell.register("/join", "/join <sala>", "Te une a una sala", args -> {
+            String room = args.trim();
+            if (room.isEmpty()) {
+                System.out.println("Uso: /join <sala>");
+                return;
+            }
+            ctx.messaging.joinRoom(ctx.nickname(), room);
+            System.out.println("Te uniste a la sala " + room);
+        });
+
+        shell.register("/leave", "/leave <sala>", "Sales de una sala", args -> {
+            String room = args.trim();
+            if (room.isEmpty()) {
+                System.out.println("Uso: /leave <sala>");
+                return;
+            }
+            ctx.messaging.leaveRoom(ctx.nickname(), room);
+            System.out.println("Saliste de la sala " + room);
+        });
+
+        shell.register("/room", "/room <sala> <texto>", "Envia un mensaje a una sala", args -> {
+            // Igual que en /msg, la primera palabra es la sala y el resto es el mensaje
+            String[] parts = args.trim().split("\\s+", 2);
+            if (parts.length < 2) {
+                System.out.println("Uso: /room <sala> <texto>");
+                return;
+            }
+            ctx.messaging.sendRoomMessage(ctx.nickname(), parts[0], parts[1]);
+            System.out.println("Mensaje enviado a la sala " + parts[0]);
+        });
     }
 
     public void onPrivateMessage(TextMessage msg) {
