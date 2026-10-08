@@ -13,3 +13,7 @@ Ice.ACM.Client.Timeout=30 #Garantiza que si no se envían bytes despues de 30 se
 Ice.ACM.Client.Heartbeat=3 #Manda info muy pequeña para mantener el socket abierto por un tiempo y que no se cierre tan rapido
 
 Ice.Warn.Connections=1
+
+# Le dice a Ice que las clases del modulo "contract" estan en el paquete Java "chat".
+# Sin esto las excepciones propias (como NicknameInUseException) llegan como UnknownUserException.
+Ice.Package.contract=chat

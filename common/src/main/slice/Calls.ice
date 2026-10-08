@@ -1,25 +1,32 @@
-module VoiceCall {
-    struct CallEndpoint {
-        string ip;
-        int port;
-    };
+// RF-05 Senalizacion de llamadas 1 a 1 (el audio viaja por UDP, NO por Ice).
+// Responsable: P4
+#pragma once
 
-    interface CallCallback {
-        void incomingCall(string callerId, CallEndpoint callerEndpoint);
-        void callAccepted(string calleeId, CallEndpoint calleeEndpoint);
-        void callRejected(string calleeId);
-        void callEnded(string userId);
-        void userJoinedVoiceGroup(string userId, CallEndpoint endpoint);
-        void userLeftVoiceGroup(string userId);
-    };
+#include "Types.ice"
 
-    interface CallService {
-        bool initiateCall(string targetUserId, CallEndpoint myEndpoint);
-        bool respondCall(string callerId, bool accept, CallEndpoint myEndpoint);
-        void endCall(string targetUserId);
+[["java:package:chat"]]
+module contract
+{
+    exception CallException extends ChatException {}
 
-        // Soporte para llamadas grupales (RF-06)
-        void joinGroupVoice(string groupId, CallEndpoint myEndpoint);
-        void leaveGroupVoice(string groupId, string userId);
-    };
-};
+    struct VoiceEndpoint
+    {
+        string host;
+        int port;           // puerto UDP de recepcion de audio
+    }
+
+    interface CallObserver
+    {
+        void onIncomingCall(string caller, VoiceEndpoint callerEndpoint);
+        void onCallAccepted(string callee, VoiceEndpoint calleeEndpoint);
+        void onCallRejected(string callee);
+        void onCallEnded(string peer);
+    }
+
+    interface CallService
+    {
+        void startCall(string from, string to, VoiceEndpoint endpoint) throws ChatException;
+        void answerCall(string callee, string caller, bool accepted, VoiceEndpoint endpoint) throws ChatException;
+        void hangup(string from, string peer) throws ChatException;
+    }
+}

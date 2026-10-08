@@ -56,7 +56,13 @@ public class ClientMain {
             // Crear un adaptador para el cliente. Es como un mini-servidor que escucha peticiones
             // Usamos el puerto 0 para que el sistema operativo nos asigne uno aleatorio disponible
             // Así vamos a permitir que el cliente reciba notificaciones
-            com.zeroc.Ice.ObjectAdapter adapter = communicator.createObjectAdapterWithEndpoints("ClientAdapter", "tcp -h 127.0.0.1 -p 0");
+            // Publicamos la misma IP con la que este equipo se conecto al servidor, porque con 127.0.0.1
+            // el servidor solo podria devolver la llamada si estuviera en la misma maquina
+            String localIp = "127.0.0.1";
+            if (session.ice_getConnection().getInfo() instanceof com.zeroc.Ice.IPConnectionInfo ipInfo) {
+                localIp = ipInfo.localAddress;
+            }
+            com.zeroc.Ice.ObjectAdapter adapter = communicator.createObjectAdapterWithEndpoints("ClientAdapter", "tcp -h " + localIp + " -p 0");
 
             // Registramos la instancia de nuestro callback en este adaptador
             com.zeroc.Ice.ObjectPrx basePrx = adapter.addWithUUID(callback);

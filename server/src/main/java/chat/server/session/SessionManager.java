@@ -21,6 +21,11 @@ public class SessionManager {
         return clients.remove(nickname) != null;
     }
 
+    //Solo lo saca si sigue registrado con ese mismo callback, así no borramos a alguien que volvió a entrar con el mismo nickname
+    public boolean unregister(String nickname, ClientCallbackPrx callback) {
+        return clients.remove(nickname, callback);
+    }
+
     public Optional<ClientCallbackPrx> callbackOf(String nickname) {
         return Optional.ofNullable(clients.get(nickname));
     }

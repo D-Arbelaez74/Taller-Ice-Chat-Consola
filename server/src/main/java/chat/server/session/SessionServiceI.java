@@ -32,6 +32,15 @@ public class SessionServiceI implements SessionService {
 
         System.out.println("Usuario conectado: " + nickname);
 
+        // Si la conexión de este cliente se cierra sin que haya hecho logout (se cayó o cerró la consola)
+        // Ice nos avisa aquí, entonces lo sacamos de la lista y le avisamos a los demás
+        current.con.setCloseCallback(con -> {
+            if (sessions.unregister(nickname, callback)) {
+                System.out.println("Cliente desconectado abruptamente -> " + nickname);
+                sessions.notifyUserDisconnected(nickname);
+            }
+        });
+
         // Se notifica que se logueo el nuevo usuario
         sessions.notifyUserConnected(nickname);
 
