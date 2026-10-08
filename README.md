@@ -69,6 +69,25 @@ nadie necesita editar `ClientMain` ni `ClientCallbackI` para agregar funcionalid
 
 3. Escalabilidad en Llamadas Grupales (Relay vs. Mesh): Analice comparativamente la topología de Audio Relay centralizado frente a la topología Mesh Peer-to-Peer elegida por su equipo. Si una sala cuenta con N participantes activos hablando simultáneamente, ¿cuál es el número total de paquetes UDP que debe emitir cada cliente y cuál es la carga total que soporta la red del servidor en ambas alternativas?
 
+R/=
+En nuestro proyecto no implementamos las llamadas grupales porque ese requerimiento era opcional, entonces solo tenemos la llamada de uno a uno. Aun así, si las hubiéramos hecho habríamos escogido Mesh, porque es la misma idea que ya usamos en la llamada de uno a uno: el servidor solo ayuda a que los clientes se pasen su IP y su puerto por Ice, y después el audio viaja directo entre ellos sin pasar por el servidor.
+
+La diferencia entre las dos opciones es quién hace el trabajo de repartir el audio:
+
+- Mesh (Peer-to-Peer): Cada participante le manda su voz directamente a todos los demás. Entonces si en la sala hay N personas, cada cliente tiene que enviar N-1 paquetes cada vez que manda un pedazo de audio, uno para cada compañero. Sumando a todos, por la red viajan N x (N-1) paquetes. El servidor no recibe ni un solo paquete de audio, su carga es cero, porque solo se usa para la señalización.
+
+- Relay centralizado: Cada participante le manda su voz una sola vez al servidor, y el servidor es el que la reenvía a los demás. Entonces cada cliente solo envía 1 paquete sin importar cuántos haya en la sala. Pero el servidor recibe N paquetes (uno de cada persona) y tiene que reenviar cada uno a los otros N-1, o sea que envía N x (N-1) paquetes. Toda la carga queda en la red del servidor.
+
+Por ejemplo, con 5 personas hablando al mismo tiempo:
+
+| | Paquetes que envía cada cliente | Paquetes que recibe el servidor | Paquetes que envía el servidor |
+|---|---|---|---|
+| Mesh | 4 | 0 | 0 |
+| Relay | 1 | 5 | 20 |
+
+En las dos opciones cada cliente termina recibiendo lo mismo, N-1 paquetes, uno por cada compañero que habla.
+
+Lo que cambia es a quién le pesa cuando la sala crece. En Mesh el esfuerzo de subida de cada cliente crece con cada persona que entra, entonces funciona bien para grupos pequeños como los de una clase, pero con muchas personas los computadores o redes más débiles se empiezan a quedar cortos. En Relay el cliente siempre hace el mismo esfuerzo y por eso aguanta salas más grandes, pero el servidor se vuelve el punto crítico: su carga crece muy rápido (casi al cuadrado de N), si se cae se cae la llamada de todos, y además el audio da un salto de más, lo que agrega un poco de retraso.
 
 
 
