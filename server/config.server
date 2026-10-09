@@ -2,6 +2,10 @@
 ChatAdapter.Endpoints=tcp -h * -p 10000
 
 # Tamano maximo de mensaje Ice en KB (defecto 1024). Los chunks de archivos deben ser menores.
+# Cada chunk de /sendfile son 64 KB de datos + unos bytes de cabecera, asi que un archivo de cualquier
+# tamano viaja en muchos mensajes de ~65 KB y nunca se acerca a este limite. El limite es una red de
+# seguridad: una sola llamada con todo el archivo (ej. 80 MB) la rechaza el servidor con MemoryLimitException.
+# Debe coincidir con client/config.client.
 Ice.MessageSizeMax=2048
 
 # Pool de hilos del servidor (el despacho es concurrente -> estado thread-safe)
