@@ -31,11 +31,13 @@ module contract
     {
         void onFileStart(FileMeta meta);
         void onFileChunk(FileChunk chunk);
+        // sha256 vacio = transferencia cancelada: el receptor descarta lo recibido
         void onFileEnd(string transferId, string sha256);
     }
 
     interface FileService
     {
+        // Flujo: beginTransfer -> sendChunk (index 0, 1, 2 ... en orden) -> endTransfer(sha256 hex del archivo completo)
         void beginTransfer(FileMeta meta) throws ChatException;
         void sendChunk(FileChunk chunk) throws ChatException;
         void endTransfer(string transferId, string sha256) throws ChatException;
