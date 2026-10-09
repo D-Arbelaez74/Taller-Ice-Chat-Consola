@@ -1,38 +1,86 @@
 package chat.server.calls;
 
-import chat.contract.CallService;
-import chat.contract.ChatException;
-import chat.contract.VoiceEndpoint;
-import chat.server.session.SessionManager;
 import com.zeroc.Ice.Current;
+import chat.contract.*;
+import chat.server.session.SessionManager;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * RF-05: senalizacion de llamadas 1 a 1. El servidor solo intercambia endpoints UDP;
- * el audio viaja directo entre clientes.
- * Responsable: P4
- */
 public class CallServiceI implements CallService {
 
-    private final SessionManager sessions;
+    private final SessionManager sessionManager;
+    private final Map<String, Map<String, VoiceEndpoint>> roomEndpoints = new ConcurrentHashMap<>();
 
-    public CallServiceI(SessionManager sessions) {
-        this.sessions = sessions;
+    public CallServiceI(SessionManager sessionManager) {
+        this.sessionManager = sessionManager;
     }
 
     @Override
     public void startCall(String from, String to, VoiceEndpoint endpoint, Current current) throws ChatException {
-        // TODO (P4): validar que el destino este conectado y libre, notificar onIncomingCall
-        throw new ChatException("startCall: no implementado");
+        Optional<ClientCallbackPrx> targetObserver = sessionManager.callbackOf(to);
+
+        if (!targetObserver.isPresent()) {
+            UserNotFoundException ex = new UserNotFoundException();
+            ex.reason = "El usuario " + to + " no esta disponible.";
+            throw ex;
+        }
+
+        targetObserver.get().onIncomingCall(from, endpoint);
     }
 
     @Override
-    public void answerCall(String callee, String caller, boolean accepted, VoiceEndpoint endpoint, Current current)
-            throws ChatException {
-        throw new ChatException("answerCall: no implementado");
+    public void answerCall(String callee, String caller, boolean accepted, VoiceEndpoint endpoint, Current current) throws ChatException {
+        Optional<ClientCallbackPrx> callerObserver = sessionManager.callbackOf(caller);
+
+        if (callerObserver.isPresent()) {
+            if (accepted) {
+                callerObserver.get().onCallAccepted(callee, endpoint);
+            } else {
+                callerObserver.get().onCallRejected(callee);
+            }
+        }
     }
 
     @Override
     public void hangup(String from, String peer, Current current) throws ChatException {
-        throw new ChatException("hangup: no implementado");
+        Optional<ClientCallbackPrx> observer = sessionManager.callbackOf(peer);
+        if (observer.isPresent()) {
+            observer.get().onCallEnded(from);
+        }
+    }
+
+    @Override
+    public void joinGroupCall(String nickname, String room, VoiceEndpoint endpoint, Current current) throws ChatException {
+        roomEndpoints.putIfAbsent(room, new ConcurrentHashMap<>());
+        Map<String, VoiceEndpoint> usersInRoom = roomEndpoints.get(room);
+        
+        usersInRoom.put(nickname, endpoint);
+        
+        VoiceEndpoint[] endpoints = usersInRoom.values().toArray(new VoiceEndpoint[0]);
+        
+        for (String participant : usersInRoom.keySet()) {
+            Optional<ClientCallbackPrx> obs = sessionManager.callbackOf(participant);
+            if (obs.isPresent()) {
+                obs.get().onGroupCallSync(room, endpoints);
+            }
+        }
+    }
+
+    @Override
+    public void leaveGroupCall(String nickname, String room, Current current) throws ChatException {
+        Map<String, VoiceEndpoint> usersInRoom = roomEndpoints.get(room);
+        if (usersInRoom != null) {
+            usersInRoom.remove(nickname);
+            VoiceEndpoint[] endpoints = usersInRoom.values().toArray(new VoiceEndpoint[0]);
+            
+            for (String participant : usersInRoom.keySet()) {
+                Optional<ClientCallbackPrx> obs = sessionManager.callbackOf(participant);
+                if (obs.isPresent()) {
+                    obs.get().onGroupCallSync(room, endpoints);
+                }
+            }
+        }
     }
 }
+
