@@ -28,7 +28,7 @@ public class ServerMain {
             adapter.add(new SessionServiceI(sessions, rooms), Util.stringToIdentity("Session"));
             adapter.add(new MessagingServiceI(sessions, rooms), Util.stringToIdentity("Messaging"));
             adapter.add(new FileServiceI(sessions, rooms), Util.stringToIdentity("Files"));
-            adapter.add(new CallServiceI(sessions), Util.stringToIdentity("Calls"));
+            adapter.add(new CallServiceI(sessions, rooms), Util.stringToIdentity("Calls"));
 
             adapter.activate();
             System.out.println("[SERVER] Servidor Ice iniciado: "

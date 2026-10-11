@@ -4,10 +4,14 @@ import chat.contract.*;
 import chat.client.ClientContext;
 import chat.client.cli.CommandShell;
 import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.InterfaceAddress;
+import java.net.NetworkInterface;
 
 /**
  * Controlador encargado de manejar la logica de las llamadas de voz.
- * Implementa tanto llamadas 1 a 1 como llamadas grupales (Mesh UDP).
+ * Las llamadas 1 a 1 envian el audio directo al otro usuario; las grupales lo envian por broadcast UDP.
  */
 public class CallController {
 
@@ -26,6 +30,7 @@ public class CallController {
 
     // Estado para llamadas grupales
     private String activeRoom;
+    private String pendingRoom; // sala que nos esta timbrando y todavia no contestamos
 
     public CallController(ClientContext ctx) {
         this.ctx = ctx;
@@ -37,14 +42,13 @@ public class CallController {
      */
     public void registerCommands(CommandShell shell) {
         shell.register("/call", "/call <user>", "Llamar a un usuario (1 a 1)", args -> startCall(args));
-        shell.register("/accept", "/accept", "Aceptar llamada entrante", args -> acceptCall());
-        shell.register("/reject", "/reject", "Rechazar llamada entrante", args -> rejectCall());
-        shell.register("/hangup", "/hangup", "Finalizar llamada actual (1 a 1)", args -> hangUp());
+        shell.register("/accept", "/accept", "Aceptar llamada entrante (1 a 1 o grupal)", args -> acceptCall());
+        shell.register("/reject", "/reject", "Rechazar llamada entrante (1 a 1 o grupal)", args -> rejectCall());
+        shell.register("/hangup", "/hangup", "Colgar la llamada actual o salir de la grupal", args -> hangUp());
         shell.register("/mute", "/mute", "Silenciar/Desilenciar el microfono", args -> toggleMute());
-        
-        // Comandos de llamadas grupales (RF-06)
-        shell.register("/joinvoice", "/joinvoice <room>", "Unirse a llamada grupal en una sala", args -> joinGroupCall(args));
-        shell.register("/leavevoice", "/leavevoice", "Salir de la llamada grupal", args -> leaveGroupCall());
+
+        // Llamada grupal (RF-06): timbra a los miembros de la sala y cada uno contesta con /accept
+        shell.register("/callroom", "/callroom <sala>", "Iniciar o entrar a la llamada grupal de una sala", args -> joinGroupCall(args));
     }
 
     // ==========================================
@@ -54,6 +58,10 @@ public class CallController {
     public void startCall(String targetUser) {
         if (targetUser == null || targetUser.trim().isEmpty()) {
             System.out.println("Debes especificar un usuario para llamar.");
+            return;
+        }
+        if (activePeer != null || activeRoom != null) {
+            System.out.println("Ya estas en una llamada. Usa /hangup antes de iniciar otra.");
             return;
         }
         try {
@@ -73,8 +81,17 @@ public class CallController {
     }
 
     public void acceptCall() {
+        // Si lo que esta timbrando es una llamada grupal, contestar es entrar a ella
+        if (pendingCaller == null && pendingRoom != null) {
+            joinGroupCall(pendingRoom);
+            return;
+        }
         if (pendingCaller == null) {
             System.out.println("No hay llamadas entrantes pendientes.");
+            return;
+        }
+        if (activePeer != null || activeRoom != null) {
+            System.out.println("Ya estas en una llamada. Usa /hangup antes de contestar otra.");
             return;
         }
 
@@ -100,6 +117,12 @@ public class CallController {
     }
 
     public void rejectCall() {
+        // Rechazar una llamada grupal es simplemente no entrar, los demas siguen hablando
+        if (pendingCaller == null && pendingRoom != null) {
+            System.out.println("Llamada grupal de la sala " + pendingRoom + " rechazada.");
+            pendingRoom = null;
+            return;
+        }
         if (pendingCaller == null) {
             System.out.println("No hay llamadas entrantes pendientes.");
             return;
@@ -117,6 +140,11 @@ public class CallController {
     }
 
     public void hangUp() {
+        // En una llamada grupal colgar es salir, sin cortarle la llamada a los demas
+        if (activeRoom != null) {
+            leaveGroupCall();
+            return;
+        }
         if (activePeer == null) {
             System.out.println("No hay una llamada activa.");
             return;
@@ -174,50 +202,102 @@ public class CallController {
     }
 
     // ==========================================
-    // LLAMADAS GRUPALES MESH (RF-06)
+    // LLAMADAS GRUPALES POR BROADCAST (RF-06)
     // ==========================================
 
+    // Inicia la llamada de una sala o entra a la que ya esta en curso
     public void joinGroupCall(String room) {
         if (room == null || room.trim().isEmpty()) {
             System.out.println("Debes especificar una sala.");
             return;
         }
+        if (activePeer != null || activeRoom != null) {
+            System.out.println("Ya estas en una llamada. Usa /hangup antes de entrar a otra.");
+            return;
+        }
+        room = room.trim();
         try {
-            this.udpSocket = new DatagramSocket();
-            VoiceEndpoint myEndpoint = new VoiceEndpoint(localIp(), udpSocket.getLocalPort());
-            this.activeRoom = room;
+            // El servidor nos dice el puerto de la llamada. Solo lo reciben los que entran,
+            // por eso los demas equipos de la red no escuchan nada aunque el paquete sea broadcast
+            GroupCallInfo info = callService.joinGroupCall(ctx.nickname(), room);
 
-            // Inicia hilos de audio inmediatamente
-            startAudioStream();
-            
-            // Avisa al servidor (Ice) que entramos a la llamada grupal
-            callService.joinGroupCall(ctx.nickname(), room, myEndpoint);
-            System.out.println("Unido a la llamada de voz de la sala " + room);
+            // Todos los participantes abren el mismo puerto. Con setReuseAddress el sistema permite
+            // que varios programas lo usen a la vez, y con setBroadcast nos deja enviar a toda la red
+            this.udpSocket = new DatagramSocket(null);
+            udpSocket.setReuseAddress(true);
+            udpSocket.setBroadcast(true);
+            udpSocket.bind(new InetSocketAddress(info.port));
+
+            this.activeRoom = room;
+            this.pendingRoom = null;
+
+            startAudioStream(info.senderId);
+            // Un solo destino: la direccion de broadcast. La red se encarga de repartir el paquete
+            audioSender.addTarget(new VoiceEndpoint(broadcastAddress(), info.port));
+
+            System.out.println("Estas en la llamada grupal de la sala " + room + ". Usa /hangup para salir.");
         } catch (Exception e) {
-            System.err.println("Error al unirse a la llamada grupal: " + describe(e));
-            closeSocket();
-            this.activeRoom = null;
+            System.err.println("Error al entrar a la llamada grupal: " + describe(e));
+            leaveQuietly(room);
+            stopAudioStream();
         }
     }
 
     public void leaveGroupCall() {
-        if (activeRoom != null) {
-            try {
-                callService.leaveGroupCall(ctx.nickname(), activeRoom);
-            } catch (Exception ignored) {}
-        }
+        String room = activeRoom;
+        leaveQuietly(room);
         stopAudioStream();
-        System.out.println("Saliste de la llamada grupal.");
+        System.out.println("Saliste de la llamada grupal de la sala " + room + ".");
     }
 
-    // Callback Invocado por el servidor via Ice
-    
-    public void onGroupCallSync(String room, VoiceEndpoint[] endpoints) {
-        if (room.equals(activeRoom) && audioSender != null) {
-            // Actualiza la malla de destinos P2P (Mesh)
-            // Cuando alguien entra o sale, el servidor nos manda la lista nueva.
-            audioSender.setTargets(endpoints);
+    // Le avisa al servidor que salimos. Si falla no importa, igual cerramos el audio de nuestro lado
+    private void leaveQuietly(String room) {
+        try {
+            callService.leaveGroupCall(ctx.nickname(), room);
+        } catch (Exception ignored) {}
+    }
+
+    // Callbacks Invocados por el servidor via Ice
+
+    public void onGroupCallInvite(String room, String caller) {
+        // Si ya estamos en esa llamada no hay nada que contestar
+        if (room.equals(activeRoom)) {
+            return;
         }
+        this.pendingRoom = room;
+        System.out.println("\n[LLAMADA GRUPAL] " + caller + " inicio una llamada en la sala " + room
+                + ". Usa '/accept' o '/reject'");
+        System.out.print("> ");
+    }
+
+    public void onGroupCallJoined(String room, String nickname) {
+        if (room.equals(activeRoom)) {
+            System.out.println("\n" + nickname + " entro a la llamada de la sala " + room);
+            System.out.print("> ");
+        }
+    }
+
+    public void onGroupCallLeft(String room, String nickname) {
+        if (room.equals(activeRoom)) {
+            System.out.println("\n" + nickname + " salio de la llamada de la sala " + room);
+            System.out.print("> ");
+        }
+    }
+
+    // Busca la direccion de broadcast de la red por la que estamos conectados al servidor.
+    // El equipo puede tener varias redes (wifi, virtuales...) y cada una tiene su propia direccion
+    private String broadcastAddress() throws Exception {
+        InetAddress local = InetAddress.getByName(localIp());
+        NetworkInterface network = NetworkInterface.getByInetAddress(local);
+        if (network != null) {
+            for (InterfaceAddress address : network.getInterfaceAddresses()) {
+                if (address.getBroadcast() != null && address.getAddress().equals(local)) {
+                    return address.getBroadcast().getHostAddress();
+                }
+            }
+        }
+        // Si no la encontramos (por ejemplo conectados por 127.0.0.1) usamos el broadcast general
+        return "255.255.255.255";
     }
 
     // ==========================================
@@ -238,12 +318,16 @@ public class CallController {
      * Inicia los hilos receptores y emisores de audio (Datagramas UDP)
      */
     public void startAudioStream() {
+        startAudioStream(0); // 0 = llamada 1 a 1, los paquetes no llevan numero de emisor
+    }
+
+    public void startAudioStream(int senderId) {
         if (audioSender != null || audioReceiver != null) {
             return; // Ya esta corriendo
         }
-        
-        audioReceiver = new UdpAudioReceiver(udpSocket);
-        audioSender = new UdpAudioSender(udpSocket);
+
+        audioReceiver = new UdpAudioReceiver(udpSocket, senderId);
+        audioSender = new UdpAudioSender(udpSocket, senderId);
 
         receiverThread = new Thread(audioReceiver);
         senderThread = new Thread(audioSender);

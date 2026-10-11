@@ -60,6 +60,7 @@ entre clientes**, sin pasar por el servidor ni por Ice.
 | **Archivos** (RF-04) | Ice / TCP | El emisor parte el archivo en bloques de 64 KB (`sequence<byte>`) y llama a `beginTransfer` → `sendChunk` × N → `endTransfer(sha256)`. El servidor (`FileServiceI`) solo reenvía cada bloque con `onFileStart` / `onFileChunk` / `onFileEnd`. El receptor reconstruye el archivo en `downloads/` y verifica su SHA-256. |
 | **Señalización de llamadas** (RF-05) | Ice / TCP | `startCall` / `answerCall` / `hangup` intercambian entre los dos clientes su IP y puerto UDP de audio (`VoiceEndpoint`). |
 | **Audio de la llamada** (RF-05) | **UDP** | Cada cliente captura el micrófono (`javax.sound.sampled`, 8 kHz, 16 bits, mono), lo empaqueta en `DatagramPacket` y lo envía al `VoiceEndpoint` del otro; un hilo dedicado recibe y reproduce. |
+| **Llamada grupal** (RF-06) | Ice / TCP + **UDP broadcast** | Por Ice, `joinGroupCall` crea la llamada de la sala, le timbra a sus miembros (`onGroupCallInvite`) y a cada uno que contesta le entrega el puerto UDP de esa llamada. El audio se envía una sola vez a la dirección de broadcast de la red en ese puerto; solo los clientes que contestaron tienen el puerto abierto, así que solo ellos lo reciben. Cada paquete lleva el número del emisor para no reproducir la propia voz. Funciona dentro de una misma red local. |
 
 ## Manual de usuario (comandos)
 
@@ -80,12 +81,11 @@ archivos y llamadas entrantes se imprimen de forma asíncrona sin bloquear la le
 | `/sendfile <usuario> <ruta>` | Envía un archivo a un usuario. | `/sendfile ana C:\fotos\gato.png` |
 | `/sendfile #<sala> <ruta>` | Envía un archivo a todos los miembros de una sala. | `/sendfile #redes informe.pdf` |
 | `/call <usuario>` | Inicia una llamada de voz 1 a 1. | `/call ana` |
-| `/accept` | Acepta la llamada entrante. | `/accept` |
-| `/reject` | Rechaza la llamada entrante. | `/reject` |
-| `/hangup` | Cuelga la llamada actual. | `/hangup` |
+| `/accept` | Acepta la llamada entrante (1 a 1 o grupal). | `/accept` |
+| `/reject` | Rechaza la llamada entrante (1 a 1 o grupal). | `/reject` |
+| `/hangup` | Cuelga la llamada 1 a 1, o sale de la grupal sin cortar la de los demás. | `/hangup` |
 | `/mute` | Silencia / reactiva el micrófono durante la llamada. | `/mute` |
-| `/joinvoice <sala>` | Te une a la llamada de voz grupal de una sala. | `/joinvoice redes` |
-| `/leavevoice` | Sales de la llamada grupal sin cortar la de los demás. | `/leavevoice` |
+| `/callroom <sala>` | Inicia la llamada grupal de una sala (le timbra a sus miembros) o entra a la que ya está en curso. | `/callroom redes` |
 | `/exit` | Cierra la sesión (logout ordenado) y sale. | `/exit` |
 
 **Notas sobre `/sendfile`**
@@ -143,20 +143,20 @@ nadie necesita editar `ClientMain` ni `ClientCallbackI` para agregar funcionalid
 1. Arquitectura H´ıbrida TCP/UDP: ¿Cuales son las razones técnicas fundamentales para diseñar una arquitectura híbrida donde el control, el chat de texto y la transferencia de archivos corren sobre ZeroC Ice (TCP), mientras que el flujo de voz corre directamente sobre UDP? ¿Qué consecuencias acústicas y de rendimiento ocurrirían si la voz se transmite sobre Ice/TCP bajo condiciones de fluctuación de red (jitter) o pérdida de paquetes?
 
 R/=
-La razón es que no todo lo que se envía en el chat necesita lo mismo de la red.
+Usamos las dos cosas porque no todo lo que se envía en el chat necesita lo mismo.
 
-Los mensajes de texto, las salas, los archivos y la señalización de las llamadas necesitan llegar completos y en orden. Si se pierde un pedazo de un archivo, el archivo queda dañado, y si se pierde un mensaje, la conversación queda incompleta. Para eso sirve TCP, que es sobre lo que trabaja Ice: confirma que cada dato llegó y si algo se pierde lo vuelve a enviar. En estos casos no importa que tarde un poco más, lo importante es que llegue bien. Además Ice nos da los contratos Slice, las excepciones y los callbacks, entonces no tenemos que armar los mensajes a mano.
+Los mensajes, las salas, los archivos y los avisos de las llamadas tienen que llegar completos y en orden. Si a un archivo le falta un pedazo, queda dañado. Para eso sirve TCP, que es sobre lo que trabaja Ice: si algo se pierde, lo vuelve a enviar. Aquí no importa que tarde un poco más, lo importante es que llegue bien.
 
-La voz es al revés: lo importante es que llegue rápido, aunque no llegue perfecta. Un pedazo de audio que llega tarde ya no sirve, porque la conversación ya siguió. Por eso usamos UDP, que manda cada paquete y no espera confirmación ni reenvía nada. Si se pierde un paquete solo se escucha un corte muy pequeño (unos milisegundos) que casi no se nota, y la llamada sigue en tiempo real.
+Con la voz es al revés: lo importante es que llegue rápido. Un pedazo de audio que llega tarde ya no sirve porque la conversación ya siguió. Por eso usamos UDP, que envía los paquetes sin esperar confirmación y sin reenviar nada. Si se pierde uno solo se escucha un corte muy pequeño y la llamada sigue.
 
-Si la voz fuera por Ice/TCP pasaría lo siguiente:
+Si la voz fuera por Ice/TCP, cada vez que se pierde un paquete TCP frena todo lo que viene detrás hasta que logra reenviarlo. Entonces:
 
-- Cuando se pierde un paquete, TCP detiene todo lo que viene detrás hasta que logra reenviarlo. Entonces el audio se queda en silencio un momento y después llega todo junto. Se escucharía entrecortado, con pausas y con pedazos que suenan acelerados o atrasados.
-- Ese retraso se va acumulando. Cada reenvío deja la conversación un poco más atrás del tiempo real, hasta que las dos personas terminan hablando una encima de la otra porque cada una escucha a la otra con varios segundos de diferencia.
-- Con jitter (cuando los paquetes llegan con tiempos irregulares) el efecto es parecido: TCP los entrega en orden pero a destiempo, y el audio suena a tirones.
-- También se gasta más red y más procesador, por las confirmaciones de TCP y porque cada pedazo de audio tendría que viajar como una llamada remota de Ice, con su cabecera y esperando respuesta.
+- El audio se escucharía entrecortado: un silencio y después todo el sonido atrasado de golpe.
+- El retraso se iría acumulando, hasta que las dos personas terminan hablando una encima de la otra.
+- Con jitter (cuando los paquetes llegan con tiempos irregulares) pasaría algo parecido, el audio sonaría a tirones.
+- Se gastaría más red, por las confirmaciones de TCP y porque cada pedazo de audio viajaría como una llamada completa de Ice.
 
-En resumen, TCP prefiere que el dato llegue completo aunque llegue tarde, y para la voz es mejor que llegue a tiempo aunque se pierda un poco. Por eso en el proyecto Ice solo se usa para avisar de la llamada e intercambiar la IP y el puerto, y el audio viaja directo entre los clientes por UDP.
+Por eso en el proyecto Ice solo avisa de la llamada y pasa la IP y el puerto, y el audio viaja directo entre los clientes por UDP.
 
 
 
@@ -174,7 +174,9 @@ La evidencia de la solucion es una prueba ejecutada, donde se enviaron archivos 
 3. Escalabilidad en Llamadas Grupales (Relay vs. Mesh): Analice comparativamente la topología de Audio Relay centralizado frente a la topología Mesh Peer-to-Peer elegida por su equipo. Si una sala cuenta con N participantes activos hablando simultáneamente, ¿cuál es el número total de paquetes UDP que debe emitir cada cliente y cuál es la carga total que soporta la red del servidor en ambas alternativas?
 
 R/=
-En nuestro proyecto las llamadas grupales eran opcionales, pero las implementamos y escogimos Mesh (comandos `/joinvoice` y `/leavevoice`). La escogimos porque es la misma idea que ya usamos en la llamada de uno a uno: el servidor solo ayuda a que los clientes se pasen su IP y su puerto por Ice, y después el audio viaja directo entre ellos sin pasar por el servidor. Cuando alguien entra o sale de la llamada, el servidor le manda a cada participante la lista actualizada de los demás.
+En nuestro proyecto las llamadas grupales eran opcionales, pero las implementamos (comando `/callroom`). Escogimos una topología sin servidor de audio, como Mesh, pero en vez de mandar una copia del paquete a cada compañero usamos el broadcast de la red local: cada participante envía su voz una sola vez a la dirección de broadcast y la red la reparte. El servidor solo se usa por Ice para timbrarle a los miembros de la sala y entregarle el puerto UDP de la llamada a los que contestan. Como solo ellos tienen ese puerto abierto, solo ellos reciben el audio y se mantiene el aislamiento de la sala.
+
+Con N personas, en nuestra solución cada cliente envía 1 solo paquete por cada pedazo de audio (no N-1 como en Mesh puro) y el servidor recibe cero paquetes de audio. Lo que se paga es que el paquete llega a todos los equipos de la red local, aunque los que no están en la llamada lo descartan, y que solo funciona dentro de una misma red.
 
 La diferencia entre las dos opciones es quién hace el trabajo de repartir el audio:
 
@@ -188,6 +190,7 @@ Por ejemplo, con 5 personas hablando al mismo tiempo:
 |---|---|---|---|
 | Mesh | 4 | 0 | 0 |
 | Relay | 1 | 5 | 20 |
+| Broadcast (la nuestra) | 1 | 0 | 0 |
 
 En las dos opciones cada cliente termina recibiendo lo mismo, N-1 paquetes, uno por cada compañero que habla.
 

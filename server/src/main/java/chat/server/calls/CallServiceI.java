@@ -2,18 +2,27 @@ package chat.server.calls;
 
 import com.zeroc.Ice.Current;
 import chat.contract.*;
+import chat.server.messaging.RoomManager;
 import chat.server.session.SessionManager;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class CallServiceI implements CallService {
 
     private final SessionManager sessionManager;
-    private final Map<String, Map<String, VoiceEndpoint>> roomEndpoints = new ConcurrentHashMap<>();
+    private final RoomManager rooms;
 
-    public CallServiceI(SessionManager sessionManager) {
+    // Sala -> llamada grupal que tiene activa en este momento
+    private final Map<String, GroupCall> groupCalls = new ConcurrentHashMap<>();
+    private final AtomicInteger nextPort = new AtomicInteger(20000);
+    private final AtomicInteger nextSenderId = new AtomicInteger(1);
+
+    public CallServiceI(SessionManager sessionManager, RoomManager rooms) {
         this.sessionManager = sessionManager;
+        this.rooms = rooms;
     }
 
     @Override
@@ -58,37 +67,86 @@ public class CallServiceI implements CallService {
         }
     }
 
-    @Override
-    public void joinGroupCall(String nickname, String room, VoiceEndpoint endpoint, Current current) throws ChatException {
-        roomEndpoints.putIfAbsent(room, new ConcurrentHashMap<>());
-        Map<String, VoiceEndpoint> usersInRoom = roomEndpoints.get(room);
-        
-        usersInRoom.put(nickname, endpoint);
+    // ==========================================
+    // LLAMADAS GRUPALES POR BROADCAST (RF-06)
+    // ==========================================
 
-        syncGroupCall(room, usersInRoom);
+    // El servidor no toca el audio. Solo decide quien participa: a cada uno que entra le entrega
+    // el puerto UDP de la llamada, y solo los que tienen ese puerto abierto reciben el broadcast.
+    // Usamos synchronized para que solo entre o salga una persona a la vez. Si dos lo hicieran
+    // al mismo tiempo podrian crearse dos llamadas distintas para la misma sala
+    @Override
+    public synchronized GroupCallInfo joinGroupCall(String nickname, String room, Current current) throws ChatException {
+        if (!sessionManager.isOnline(nickname)) {
+            throw new NotLoggedInException("Debes iniciar sesion antes de llamar");
+        }
+        if (!rooms.exists(room)) {
+            throw new CallException("La sala " + room + " no existe");
+        }
+        // Solo los miembros de la sala pueden entrar a su llamada, asi el audio no sale del grupo
+        if (!rooms.isMember(room, nickname)) {
+            throw new CallException("Debes unirte a la sala " + room + " antes de entrar a su llamada");
+        }
+
+        GroupCall call = groupCalls.get(room);
+        boolean isNewCall = (call == null);
+        if (isNewCall) {
+            // Cada llamada usa un puerto distinto para que no se mezcle el audio de dos salas
+            call = new GroupCall(nextPort.getAndIncrement());
+            groupCalls.put(room, call);
+        }
+
+        // Quitamos a los que se desconectaron sin salir de la llamada
+        call.participants.removeIf(participant -> !sessionManager.isOnline(participant));
+
+        if (!call.participants.add(nickname)) {
+            throw new CallException("Ya estas en la llamada de la sala " + room);
+        }
+
+        if (isNewCall) {
+            // Le timbramos a los demas miembros de la sala, cada uno decide si contesta
+            for (String member : rooms.members(room)) {
+                if (!member.equals(nickname)) {
+                    sessionManager.callbackOf(member).ifPresent(cb -> cb.onGroupCallInviteAsync(room, nickname));
+                }
+            }
+        } else {
+            // A los que ya estaban hablando les avisamos quien entro
+            for (String participant : call.participants) {
+                if (!participant.equals(nickname)) {
+                    sessionManager.callbackOf(participant).ifPresent(cb -> cb.onGroupCallJoinedAsync(room, nickname));
+                }
+            }
+        }
+
+        return new GroupCallInfo(call.port, nextSenderId.getAndIncrement());
     }
 
     @Override
-    public void leaveGroupCall(String nickname, String room, Current current) throws ChatException {
-        Map<String, VoiceEndpoint> usersInRoom = roomEndpoints.get(room);
-        if (usersInRoom != null) {
-            usersInRoom.remove(nickname);
-            syncGroupCall(room, usersInRoom);
+    public synchronized void leaveGroupCall(String nickname, String room, Current current) throws ChatException {
+        GroupCall call = groupCalls.get(room);
+        if (call == null || !call.participants.remove(nickname)) {
+            return;
+        }
+
+        // Los demas siguen en la llamada, solo les avisamos que alguien salio
+        for (String participant : call.participants) {
+            sessionManager.callbackOf(participant).ifPresent(cb -> cb.onGroupCallLeftAsync(room, nickname));
+        }
+
+        // Si ya no queda nadie se termina la llamada de esa sala
+        if (call.participants.isEmpty()) {
+            groupCalls.remove(room);
         }
     }
 
-    // Le manda a cada participante la lista de los demas. No incluimos su propia direccion
-    // porque si no se enviaria el audio a si mismo y escucharia su propia voz (eco)
-    private void syncGroupCall(String room, Map<String, VoiceEndpoint> usersInRoom) {
-        for (String participant : usersInRoom.keySet()) {
-            Optional<ClientCallbackPrx> obs = sessionManager.callbackOf(participant);
-            if (obs.isPresent()) {
-                VoiceEndpoint[] others = usersInRoom.entrySet().stream()
-                        .filter(entry -> !entry.getKey().equals(participant))
-                        .map(Map.Entry::getValue)
-                        .toArray(VoiceEndpoint[]::new);
-                obs.get().onGroupCallSync(room, others);
-            }
+    // Datos de la llamada grupal de una sala
+    private static final class GroupCall {
+        final int port;
+        final Set<String> participants = ConcurrentHashMap.newKeySet();
+
+        GroupCall(int port) {
+            this.port = port;
         }
     }
 }

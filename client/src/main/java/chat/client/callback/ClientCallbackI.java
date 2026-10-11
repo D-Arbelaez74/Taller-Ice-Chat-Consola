@@ -82,8 +82,18 @@ public class ClientCallbackI implements ClientCallback {
     }
 
     @Override
-    public void onGroupCallSync(String room, VoiceEndpoint[] endpoints, Current current) {
-        calls.onGroupCallSync(room, endpoints);
+    public void onGroupCallInvite(String room, String caller, Current current) {
+        calls.onGroupCallInvite(room, caller);
+    }
+
+    @Override
+    public void onGroupCallJoined(String room, String nickname, Current current) {
+        calls.onGroupCallJoined(room, nickname);
+    }
+
+    @Override
+    public void onGroupCallLeft(String room, String nickname, Current current) {
+        calls.onGroupCallLeft(room, nickname);
     }
 }
 
