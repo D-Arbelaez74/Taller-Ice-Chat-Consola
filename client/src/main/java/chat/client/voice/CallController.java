@@ -59,14 +59,14 @@ public class CallController {
         try {
             this.udpSocket = new DatagramSocket();
             // Localizamos nuestro puerto para pasarselo al destino y que sepa donde enviarnos el audio
-            VoiceEndpoint myEndpoint = new VoiceEndpoint("127.0.0.1", udpSocket.getLocalPort());
+            VoiceEndpoint myEndpoint = new VoiceEndpoint(localIp(), udpSocket.getLocalPort());
             this.activePeer = targetUser;
 
             // Enviamos la senal a traves de Ice (TCP)
             callService.startCall(ctx.nickname(), targetUser, myEndpoint);
             System.out.println("Llamando a " + targetUser + "...");
         } catch (Exception e) {
-            System.err.println("Error al iniciar la llamada: " + e.getMessage());
+            System.err.println("Error al iniciar la llamada: " + describe(e));
             closeSocket();
             this.activePeer = null;
         }
@@ -80,7 +80,7 @@ public class CallController {
 
         try {
             this.udpSocket = new DatagramSocket();
-            VoiceEndpoint myEndpoint = new VoiceEndpoint("127.0.0.1", udpSocket.getLocalPort());
+            VoiceEndpoint myEndpoint = new VoiceEndpoint(localIp(), udpSocket.getLocalPort());
             this.activePeer = pendingCaller;
 
             // Confirmamos aceptacion via Ice
@@ -95,7 +95,7 @@ public class CallController {
             pendingCaller = null;
             pendingIncomingEndpoint = null;
         } catch (Exception e) {
-            System.err.println("Error al aceptar la llamada: " + e.getMessage());
+            System.err.println("Error al aceptar la llamada: " + describe(e));
         }
     }
 
@@ -112,17 +112,19 @@ public class CallController {
             pendingCaller = null;
             pendingIncomingEndpoint = null;
         } catch (Exception e) {
-            System.err.println("Error al rechazar la llamada: " + e.getMessage());
+            System.err.println("Error al rechazar la llamada: " + describe(e));
         }
     }
 
     public void hangUp() {
-        if (activePeer != null) {
-            try {
-                // Notificamos cierre via Ice
-                callService.hangup(ctx.nickname(), activePeer);
-            } catch (Exception ignored) {}
+        if (activePeer == null) {
+            System.out.println("No hay una llamada activa.");
+            return;
         }
+        try {
+            // Notificamos cierre via Ice
+            callService.hangup(ctx.nickname(), activePeer);
+        } catch (Exception ignored) {}
         stopAudioStream();
         System.out.println("Llamada finalizada.");
     }
@@ -137,6 +139,10 @@ public class CallController {
     }
 
     public void onCallAccepted(String callee, VoiceEndpoint endpoint) {
+        // Si ya colgamos o no estabamos llamando a esa persona, no abrimos el audio
+        if (activePeer == null || !activePeer.equals(callee)) {
+            return;
+        }
         System.out.println("\nLlamada aceptada por " + callee);
         startAudioStream();
         audioSender.addTarget(endpoint);
@@ -151,6 +157,18 @@ public class CallController {
 
     public void onCallEnded(String peer) {
         System.out.println("\nLlamada finalizada por " + peer);
+
+        // Si el que colgo es el que nos estaba llamando, la llamada pendiente ya no se puede aceptar
+        if (peer.equals(pendingCaller)) {
+            pendingCaller = null;
+            pendingIncomingEndpoint = null;
+        }
+
+        // Solo cerramos el audio si la llamada que termino es la que teniamos activa
+        if (activePeer != null && !activePeer.equals(peer)) {
+            System.out.print("> ");
+            return;
+        }
         stopAudioStream();
         System.out.print("> ");
     }
@@ -166,7 +184,7 @@ public class CallController {
         }
         try {
             this.udpSocket = new DatagramSocket();
-            VoiceEndpoint myEndpoint = new VoiceEndpoint("127.0.0.1", udpSocket.getLocalPort());
+            VoiceEndpoint myEndpoint = new VoiceEndpoint(localIp(), udpSocket.getLocalPort());
             this.activeRoom = room;
 
             // Inicia hilos de audio inmediatamente
@@ -176,7 +194,7 @@ public class CallController {
             callService.joinGroupCall(ctx.nickname(), room, myEndpoint);
             System.out.println("Unido a la llamada de voz de la sala " + room);
         } catch (Exception e) {
-            System.err.println("Error al unirse a la llamada grupal: " + e.getMessage());
+            System.err.println("Error al unirse a la llamada grupal: " + describe(e));
             closeSocket();
             this.activeRoom = null;
         }
@@ -230,6 +248,10 @@ public class CallController {
         receiverThread = new Thread(audioReceiver);
         senderThread = new Thread(audioSender);
 
+        // Hilos daemon para que el programa pueda cerrarse con /exit aunque haya una llamada abierta
+        receiverThread.setDaemon(true);
+        senderThread.setDaemon(true);
+
         receiverThread.start();
         senderThread.start();
     }
@@ -245,6 +267,23 @@ public class CallController {
         activeRoom = null;
         audioSender = null;
         audioReceiver = null;
+    }
+
+    // Publicamos la misma IP con la que este equipo se conecto al servidor, porque con 127.0.0.1
+    // el audio solo llegaria si los dos usuarios estuvieran en la misma maquina
+    private String localIp() {
+        if (ctx.session.ice_getConnection().getInfo() instanceof com.zeroc.Ice.IPConnectionInfo ipInfo) {
+            return ipInfo.localAddress;
+        }
+        return "127.0.0.1";
+    }
+
+    // Las excepciones de nuestro contrato traen el motivo en "reason" y no en getMessage()
+    private String describe(Exception e) {
+        if (e instanceof ChatException chatError) {
+            return chatError.reason;
+        }
+        return e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
     }
 
     private void closeSocket() {
